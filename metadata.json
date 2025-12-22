@@ -1,0 +1,5 @@
+{
+  "name": "ReadStack Web",
+  "description": "A modern web interface for organizing, reading, and managing your story collection. Features multi-proxy bulk downloading capabilities.",
+  "requestFramePermissions": []
+}
