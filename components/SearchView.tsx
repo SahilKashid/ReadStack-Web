@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Link as LinkIcon, AlertCircle, CheckCircle, Loader, Download, FileDown, Network, Files, Trash2 } from 'lucide-react';
+import { Search, Link as LinkIcon, AlertCircle, CheckCircle, Loader, Download, FileDown, Network, Files, Trash2, FileCode } from 'lucide-react';
 import { ScrapeJob, Story } from '../types';
 import { scrapeStoryReal, fetchStoryLinks } from '../services/Scraper';
 
@@ -356,6 +356,149 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       printContent(story.title, getStoryContentHtml(story));
   };
 
+  const handleSingleHtmlDownload = (story: Story) => {
+      if (!story) {
+        alert("Error: Story content is missing.");
+        return;
+      }
+
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${story.title}</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --meta: #666666;
+            --accent: #ea580c;
+        }
+        body { 
+            font-family: 'Georgia', 'Times New Roman', serif; 
+            line-height: 1.8; 
+            max-width: 700px; 
+            margin: 0 auto; 
+            padding: 40px 20px;
+            color: var(--text);
+            background: var(--bg);
+        }
+        header {
+            margin-bottom: 40px;
+            text-align: center;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+        h1 { 
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            color: #000;
+            line-height: 1.2;
+        }
+        .meta { 
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 0.9rem;
+            color: var(--meta);
+        }
+        .meta strong { color: var(--accent); }
+        .content { 
+            font-size: 1.2rem;
+            text-align: justify;
+        }
+        .content p { margin-bottom: 1.5em; }
+        @media (max-width: 600px) {
+            body { padding: 20px 15px; }
+            h1 { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>${story.title}</h1>
+        <div class="meta">
+            by <strong>${story.author}</strong><br>
+            Category: ${story.category} • ${new Date(story.dateAdded).toLocaleDateString()}
+        </div>
+    </header>
+    <div class="content">
+        ${story.content}
+    </div>
+</body>
+</html>`;
+
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${story.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  };
+
+  const handleMergedHtmlDownload = () => {
+      const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
+      const storiesToMerge = completedJobs
+          .map(j => stories.find(s => s.id === j.resultStoryId))
+          .filter((s): s is Story => !!s);
+      
+      if (storiesToMerge.length === 0) {
+        alert("No completed stories found to merge.");
+        return;
+      }
+
+      const mergedStoriesHtml = storiesToMerge.map(story => `
+        <article style="margin-bottom: 80px; page-break-after: always;">
+            <header style="text-align: center; margin-bottom: 40px; border-bottom: 1px solid #eee; padding-bottom: 20px;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 10px;">${story.title}</h1>
+                <div style="font-family: sans-serif; font-size: 0.9rem; color: #666;">
+                    by <strong style="color: #ea580c;">${story.author}</strong><br>
+                    Category: ${story.category} • ${new Date(story.dateAdded).toLocaleDateString()}
+                </div>
+            </header>
+            <div class="content" style="font-size: 1.2rem; line-height: 1.8; text-align: justify;">
+                ${story.content}
+            </div>
+        </article>
+      `).join('');
+
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReadStack Collection</title>
+    <style>
+        body { 
+            font-family: 'Georgia', serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 40px 20px;
+            background: #fff;
+        }
+        .content p { margin-bottom: 1.5em; }
+    </style>
+</head>
+<body>
+    ${mergedStoriesHtml}
+</body>
+</html>`;
+
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `readstack_collection_${storiesToMerge.length}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  };
+
   const handleMergedPdfDownload = () => {
       const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
       const storiesToMerge = completedJobs
@@ -457,14 +600,23 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
             <h3 className="text-lg font-bold text-white">Download Queue</h3>
             <div className="flex items-center gap-2">
                 {completedCount > 1 && (
-                    <button 
-                        onClick={handleMergedPdfDownload}
-                        disabled={isPrinting} 
-                        className="text-xs text-slate-950 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/10 hover:shadow-orange-500/20 active:scale-95"
-                    >
-                    <Files className="w-4 h-4" />
-                    {isPrinting ? 'Preparing PDF...' : `Merge & Save All (${completedCount})`}
-                    </button>
+                    <>
+                        <button 
+                            onClick={handleMergedHtmlDownload}
+                            className="text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95"
+                        >
+                            <FileCode className="w-4 h-4 text-orange-500" />
+                            Save All HTML
+                        </button>
+                        <button 
+                            onClick={handleMergedPdfDownload}
+                            disabled={isPrinting} 
+                            className="text-xs text-slate-950 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/10 hover:shadow-orange-500/20 active:scale-95"
+                        >
+                            <Files className="w-4 h-4" />
+                            {isPrinting ? 'Preparing PDF...' : `Merge & Save All PDF (${completedCount})`}
+                        </button>
+                    </>
                 )}
                 <button
                     onClick={onClearQueue}
@@ -504,7 +656,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                         )}
 
                         {job.status === 'completed' && job.resultStoryId && (
-                            <div className="flex gap-2 mt-2 animate-in fade-in duration-300">
+                            <div className="flex gap-4 mt-2 animate-in fade-in duration-300">
                                 <button 
                                     onClick={() => {
                                       const s = stories.find(s => s.id === job.resultStoryId);
@@ -516,6 +668,17 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                                 >
                                     {isPrinting ? <Loader className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}
                                     {isPrinting ? 'Preparing...' : 'Save PDF'}
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                      const s = stories.find(s => s.id === job.resultStoryId);
+                                      if (s) handleSingleHtmlDownload(s);
+                                      else alert("Error: Story content missing.");
+                                    }}
+                                    className="text-xs flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
+                                >
+                                    <FileCode className="w-3 h-3" />
+                                    Save HTML
                                 </button>
                             </div>
                         )}
