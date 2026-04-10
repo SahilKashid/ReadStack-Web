@@ -19,6 +19,9 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
   const [foundLinks, setFoundLinks] = useState<{url: string, title: string}[]>([]);
   const [selectedLinks, setSelectedLinks] = useState<Set<string>>(new Set());
   
+  // Library selection
+  const [selectedStoryIds, setSelectedStoryIds] = useState<Set<string>>(new Set());
+  
   // Printing loading state
   const [isPrinting, setIsPrinting] = useState(false);
   
@@ -87,14 +90,22 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
 
       setIsFetchingLinks(true);
       setStatusMessage('Scanning page for stories...');
-      setFoundLinks([]);
-      setSelectedLinks(new Set());
 
       try {
           const links = await fetchStoryLinks(targetUrl, (msg) => setStatusMessage(msg));
-          setFoundLinks(links);
-          // Auto select all by default
-          setSelectedLinks(new Set(links.map(l => l.url)));
+          
+          setFoundLinks(prev => {
+              const existingUrls = new Set(prev.map(l => l.url));
+              const newLinks = links.filter(l => !existingUrls.has(l.url));
+              return [...prev, ...newLinks];
+          });
+
+          setSelectedLinks(prev => {
+              const next = new Set(prev);
+              links.forEach(l => next.add(l.url));
+              return next;
+          });
+
           setStatusMessage(`Found ${links.length} stories!`);
       } catch (e) {
           setStatusMessage(`Error: ${e instanceof Error ? e.message : 'Failed to fetch'}`);
@@ -127,6 +138,166 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
 
   // --- HTML GENERATION & PRINTING ---
 
+  // --- HTML GENERATION & STYLING ---
+
+  const READER_VIEW_STYLES = `
+    @page { 
+        margin: 2cm;
+        size: auto; 
+    }
+    
+    /* Base Reset */
+    html, body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        width: 100%;
+    }
+
+    body { 
+        font-family: 'Georgia', 'Times New Roman', serif; 
+        padding: 40px;
+        color: #000;
+        line-height: 1.6;
+    }
+
+    /* Layout Cleanliness */
+    .story-print-container {
+        display: block;
+        max-width: 800px;
+        margin: 0 auto;
+        page-break-after: always;
+    }
+    
+    .story-print-container:last-child {
+        page-break-after: auto;
+    }
+
+    /* Header Styling */
+    .story-header {
+        margin-bottom: 30px;
+        border-bottom: 2px solid #000;
+        padding-bottom: 10px;
+        text-align: center;
+    }
+
+    .story-header h1 {
+        font-size: 24pt;
+        font-weight: bold;
+        margin: 0 0 10px 0;
+        color: #000;
+    }
+
+    .story-header .meta {
+        font-size: 14pt;
+        margin-bottom: 5px;
+    }
+
+    .story-header .sub-meta {
+        font-size: 10pt;
+        color: #444;
+        font-family: sans-serif;
+    }
+
+    /* Content Styling - The Reader View */
+    .story-content-wrapper {
+        font-size: 12pt;
+        text-align: justify;
+    }
+
+    /* ELEMENT RESET - These styles enforce the "Reader View" look */
+    
+    .story-content-wrapper p, 
+    .story-content-wrapper div, 
+    .story-content-wrapper section, 
+    .story-content-wrapper article,
+    .story-content-wrapper blockquote {
+        display: block !important;
+        position: static !important;
+        float: none !important;
+        width: auto !important;
+        height: auto !important;
+        margin: 0 0 1em 0 !important;
+        padding: 0 !important;
+        text-indent: 0 !important;
+        overflow: visible !important;
+    }
+
+    .story-content-wrapper span, 
+    .story-content-wrapper b, 
+    .story-content-wrapper strong, 
+    .story-content-wrapper i, 
+    .story-content-wrapper em, 
+    .story-content-wrapper u {
+        display: inline !important;
+        position: static !important;
+        float: none !important;
+        height: auto !important;
+        width: auto !important;
+        background: transparent !important;
+        color: inherit !important;
+    }
+
+    /* Aggressively Hide Visuals and Media for Efficiency */
+    img, svg, video, canvas, audio, picture, figure, iframe, .ad, .advertisement, button, nav, header, footer, .noprint {
+        display: none !important;
+    }
+
+    /* Neutralize Links - Make them look like normal text */
+    a {
+        color: #000 !important;
+        text-decoration: none !important;
+        border: none !important;
+        cursor: text !important;
+        pointer-events: none !important;
+    }
+
+    /* Clean up lists */
+    .story-content-wrapper ul, .story-content-wrapper ol {
+        margin-left: 2em !important;
+    }
+    .story-content-wrapper li {
+        display: list-item !important;
+    }
+    
+    .page-break {
+        display: none;
+    }
+
+    @media print {
+        body { padding: 0; }
+    }
+  `;
+
+  const READER_VIEW_SCRIPT = `
+    window.onload = function() {
+        const wrappers = document.querySelectorAll('.story-content-wrapper');
+        wrappers.forEach(wrapper => {
+            const media = wrapper.querySelectorAll('img, svg, video, iframe, canvas, picture, figure');
+            media.forEach(m => m.remove());
+            const links = wrapper.querySelectorAll('a');
+            links.forEach(link => {
+                const span = document.createElement('span');
+                span.innerHTML = link.innerHTML;
+                link.parentNode.replaceChild(span, link);
+            });
+            const allElements = wrapper.getElementsByTagName('*');
+            for (let i = 0; i < allElements.length; i++) {
+                const el = allElements[i];
+                el.removeAttribute('style');
+                el.removeAttribute('class');
+                el.removeAttribute('width');
+                el.removeAttribute('height');
+                el.removeAttribute('align');
+                el.removeAttribute('valign');
+                if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
+                    el.style.display = 'none';
+                }
+            }
+        });
+    };
+  `;
+
   const getStoryContentHtml = (story: Story) => `
     <article class="story-print-container">
         <header class="story-header">
@@ -141,14 +312,12 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
         <div class="story-content-wrapper">
             ${story.content}
         </div>
-        <div class="page-break"></div>
     </article>
   `;
 
   const printContent = (title: string, htmlContent: string) => {
       setIsPrinting(true);
       
-      // Open in new window to ensure rendering and print dialog works reliably
       const printWindow = window.open('', '_blank');
       
       if (!printWindow) {
@@ -164,176 +333,16 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
           <html>
           <head>
               <title>${title}</title>
-              <style>
-                  @page { 
-                      margin: 2cm;
-                      size: auto; 
-                  }
-                  
-                  /* Base Reset */
-                  html, body {
-                      margin: 0;
-                      padding: 0;
-                      background: #fff;
-                      width: 100%;
-                  }
-
-                  body { 
-                      font-family: 'Georgia', 'Times New Roman', serif; 
-                      padding: 40px;
-                      color: #000;
-                      line-height: 1.6;
-                  }
-
-                  /* Layout Cleanliness */
-                  .story-print-container {
-                      display: block;
-                      max-width: 100%;
-                      margin: 0 auto;
-                      page-break-after: always;
-                  }
-                  
-                  .story-print-container:last-child {
-                      page-break-after: auto;
-                  }
-
-                  /* Header Styling */
-                  .story-header {
-                      margin-bottom: 30px;
-                      border-bottom: 2px solid #000;
-                      padding-bottom: 10px;
-                      text-align: center;
-                  }
-
-                  .story-header h1 {
-                      font-size: 24pt;
-                      font-weight: bold;
-                      margin: 0 0 10px 0;
-                      color: #000;
-                  }
-
-                  .story-header .meta {
-                      font-size: 14pt;
-                      margin-bottom: 5px;
-                  }
-
-                  .story-header .sub-meta {
-                      font-size: 10pt;
-                      color: #444;
-                      font-family: sans-serif;
-                  }
-
-                  /* Content Styling - The Reader View */
-                  .story-content-wrapper {
-                      font-size: 12pt;
-                      text-align: justify;
-                  }
-
-                  /* ELEMENT RESET - These styles enforce the "Reader View" look */
-                  
-                  /* Force all block-level elements to behave nicely */
-                  .story-content-wrapper p, 
-                  .story-content-wrapper div, 
-                  .story-content-wrapper section, 
-                  .story-content-wrapper article,
-                  .story-content-wrapper blockquote {
-                      display: block !important;
-                      position: static !important;
-                      float: none !important;
-                      width: auto !important;
-                      height: auto !important;
-                      margin: 0 0 1em 0 !important;
-                      padding: 0 !important;
-                      text-indent: 0 !important;
-                      overflow: visible !important;
-                  }
-
-                  /* Ensure text formatting elements stay inline */
-                  .story-content-wrapper span, 
-                  .story-content-wrapper b, 
-                  .story-content-wrapper strong, 
-                  .story-content-wrapper i, 
-                  .story-content-wrapper em, 
-                  .story-content-wrapper u {
-                      display: inline !important;
-                      position: static !important;
-                      float: none !important;
-                      height: auto !important;
-                      width: auto !important;
-                      background: transparent !important;
-                      color: inherit !important;
-                  }
-
-                  /* Aggressively Hide Visuals and Media for Efficiency */
-                  img, svg, video, canvas, audio, picture, figure, iframe, .ad, .advertisement, button, nav, header, footer, .noprint {
-                      display: none !important;
-                  }
-
-                  /* Neutralize Links - Make them look like normal text */
-                  a {
-                      color: #000 !important;
-                      text-decoration: none !important;
-                      border: none !important;
-                      cursor: text !important;
-                      pointer-events: none !important;
-                  }
-
-                  /* Clean up lists */
-                  .story-content-wrapper ul, .story-content-wrapper ol {
-                      margin-left: 2em !important;
-                  }
-                  .story-content-wrapper li {
-                      display: list-item !important;
-                  }
-                  
-                  .page-break {
-                      display: none; /* Handled by container page-break-after */
-                  }
-              </style>
+              <style>${READER_VIEW_STYLES}</style>
           </head>
           <body>
               ${htmlContent}
               <script>
+                  ${READER_VIEW_SCRIPT}
+                  // Auto-print for PDF generation
+                  const originalOnLoad = window.onload;
                   window.onload = function() {
-                      // DOM SANITIZATION SCRIPT
-                      // This runs before print to strip messy styles and peripheral elements
-                      
-                      const wrappers = document.querySelectorAll('.story-content-wrapper');
-                      
-                      wrappers.forEach(wrapper => {
-                          // 1. Remove Media Elements (Images, SVGs, etc)
-                          const media = wrapper.querySelectorAll('img, svg, video, iframe, canvas, picture, figure');
-                          media.forEach(m => m.remove());
-
-                          // 2. Convert Hyperlinks to Plain Text
-                          const links = wrapper.querySelectorAll('a');
-                          links.forEach(link => {
-                              const span = document.createElement('span');
-                              span.innerHTML = link.innerHTML; // Keep inner formatting like <i> or <b>
-                              link.parentNode.replaceChild(span, link);
-                          });
-
-                          // 3. Strip layout attributes from remaining elements
-                          const allElements = wrapper.getElementsByTagName('*');
-                          for (let i = 0; i < allElements.length; i++) {
-                              const el = allElements[i];
-                              
-                              // Remove all attributes that affect layout
-                              el.removeAttribute('style');
-                              el.removeAttribute('class');
-                              el.removeAttribute('width');
-                              el.removeAttribute('height');
-                              el.removeAttribute('align');
-                              el.removeAttribute('valign');
-                              
-                              // Unwrap empty divs to reduce clutter
-                              if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
-                                  el.style.display = 'none';
-                              }
-                          }
-                      });
-
-                      // Slight delay to ensure rendering settles
+                      if (originalOnLoad) originalOnLoad();
                       setTimeout(function() {
                           window.print();
                       }, 500);
@@ -369,62 +378,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${story.title}</title>
-    <style>
-        :root {
-            --bg: #ffffff;
-            --text: #1a1a1a;
-            --meta: #666666;
-            --accent: #ea580c;
-        }
-        body { 
-            font-family: 'Georgia', 'Times New Roman', serif; 
-            line-height: 1.8; 
-            max-width: 700px; 
-            margin: 0 auto; 
-            padding: 40px 20px;
-            color: var(--text);
-            background: var(--bg);
-        }
-        header {
-            margin-bottom: 40px;
-            text-align: center;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 20px;
-        }
-        h1 { 
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            color: #000;
-            line-height: 1.2;
-        }
-        .meta { 
-            font-family: system-ui, -apple-system, sans-serif;
-            font-size: 0.9rem;
-            color: var(--meta);
-        }
-        .meta strong { color: var(--accent); }
-        .content { 
-            font-size: 1.2rem;
-            text-align: justify;
-        }
-        .content p { margin-bottom: 1.5em; }
-        @media (max-width: 600px) {
-            body { padding: 20px 15px; }
-            h1 { font-size: 1.8rem; }
-        }
-    </style>
+    <style>${READER_VIEW_STYLES}</style>
 </head>
 <body>
-    <header>
-        <h1>${story.title}</h1>
-        <div class="meta">
-            by <strong>${story.author}</strong><br>
-            Category: ${story.category} • ${new Date(story.dateAdded).toLocaleDateString()}
-        </div>
-    </header>
-    <div class="content">
-        ${story.content}
-    </div>
+    ${getStoryContentHtml(story)}
+    <script>${READER_VIEW_SCRIPT}</script>
 </body>
 </html>`;
 
@@ -439,31 +397,27 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       URL.revokeObjectURL(url);
   };
 
-  const handleMergedHtmlDownload = () => {
+  const handleMergedHtmlDownload = (storyIds?: string[]) => {
       const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
-      const storiesToMerge = completedJobs
-          .map(j => stories.find(s => s.id === j.resultStoryId))
-          .filter((s): s is Story => !!s);
+      
+      let storiesToMerge: Story[] = [];
+      
+      if (storyIds && storyIds.length > 0) {
+          storiesToMerge = storyIds
+              .map(id => stories.find(s => s.id === id))
+              .filter((s): s is Story => !!s);
+      } else {
+          storiesToMerge = completedJobs
+              .map(j => stories.find(s => s.id === j.resultStoryId))
+              .filter((s): s is Story => !!s);
+      }
       
       if (storiesToMerge.length === 0) {
-        alert("No completed stories found to merge.");
+        alert("No stories found to merge.");
         return;
       }
 
-      const mergedStoriesHtml = storiesToMerge.map(story => `
-        <article style="margin-bottom: 80px; page-break-after: always;">
-            <header style="text-align: center; margin-bottom: 40px; border-bottom: 1px solid #eee; padding-bottom: 20px;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 10px;">${story.title}</h1>
-                <div style="font-family: sans-serif; font-size: 0.9rem; color: #666;">
-                    by <strong style="color: #ea580c;">${story.author}</strong><br>
-                    Category: ${story.category} • ${new Date(story.dateAdded).toLocaleDateString()}
-                </div>
-            </header>
-            <div class="content" style="font-size: 1.2rem; line-height: 1.8; text-align: justify;">
-                ${story.content}
-            </div>
-        </article>
-      `).join('');
+      const mergedStoriesHtml = storiesToMerge.map(s => getStoryContentHtml(s)).join('');
 
       const htmlContent = `
 <!DOCTYPE html>
@@ -472,19 +426,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ReadStack Collection</title>
-    <style>
-        body { 
-            font-family: 'Georgia', serif; 
-            max-width: 800px; 
-            margin: 0 auto; 
-            padding: 40px 20px;
-            background: #fff;
-        }
-        .content p { margin-bottom: 1.5em; }
-    </style>
+    <style>${READER_VIEW_STYLES}</style>
 </head>
 <body>
     ${mergedStoriesHtml}
+    <script>${READER_VIEW_SCRIPT}</script>
 </body>
 </html>`;
 
@@ -499,14 +445,23 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       URL.revokeObjectURL(url);
   };
 
-  const handleMergedPdfDownload = () => {
+  const handleMergedPdfDownload = (storyIds?: string[]) => {
       const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
-      const storiesToMerge = completedJobs
-          .map(j => stories.find(s => s.id === j.resultStoryId))
-          .filter((s): s is Story => !!s);
+      
+      let storiesToMerge: Story[] = [];
+      
+      if (storyIds && storyIds.length > 0) {
+          storiesToMerge = storyIds
+              .map(id => stories.find(s => s.id === id))
+              .filter((s): s is Story => !!s);
+      } else {
+          storiesToMerge = completedJobs
+              .map(j => stories.find(s => s.id === j.resultStoryId))
+              .filter((s): s is Story => !!s);
+      }
       
       if (storiesToMerge.length === 0) {
-        alert("No completed stories found to merge.");
+        alert("No stories found to merge.");
         return;
       }
 
@@ -557,10 +512,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
         {foundLinks.length > 0 && (
             <div className="mt-6 border-t border-slate-800 pt-6 animate-in slide-in-from-top-4 duration-500 ease-out-quart">
                 <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-medium text-slate-300">Found {foundLinks.length} stories</span>
-                    <div className="flex gap-2">
-                        <button onClick={() => setSelectedLinks(new Set(foundLinks.map(l => l.url)))} className="text-xs text-orange-500 hover:underline transition-all">Select All</button>
-                        <button onClick={() => setSelectedLinks(new Set())} className="text-xs text-slate-500 hover:underline transition-all">None</button>
+                    <span className="text-sm font-medium text-slate-300">Staged Stories ({foundLinks.length})</span>
+                    <div className="flex gap-3">
+                        <button onClick={() => setSelectedLinks(new Set(foundLinks.map(l => l.url)))} className="text-xs text-orange-500 hover:text-orange-400 transition-all">Select All</button>
+                        <button onClick={() => setSelectedLinks(new Set())} className="text-xs text-slate-500 hover:text-slate-400 transition-all">None</button>
+                        <button onClick={() => { setFoundLinks([]); setSelectedLinks(new Set()); }} className="text-xs text-red-500/70 hover:text-red-400 transition-all ml-2">Clear All</button>
                     </div>
                 </div>
                 
@@ -686,6 +642,88 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                         {job.status === 'failed' && (
                             <div className="text-xs text-red-400 mt-1">{job.error}</div>
                         )}
+                    </div>
+                </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Library Section */}
+      {stories.length > 0 && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out-quart delay-150">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                <h3 className="text-lg font-bold text-white">Your Collection</h3>
+                <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">{stories.length}</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+                {selectedStoryIds.size > 0 && (
+                    <div className="flex items-center gap-2 animate-in zoom-in duration-300">
+                        <button 
+                            onClick={() => handleMergedHtmlDownload(Array.from(selectedStoryIds))}
+                            className="text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold px-3 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95"
+                        >
+                            <FileCode className="w-4 h-4 text-orange-500" />
+                            Save Selected HTML
+                        </button>
+                        <button 
+                            onClick={() => handleMergedPdfDownload(Array.from(selectedStoryIds))}
+                            disabled={isPrinting} 
+                            className="text-xs text-slate-950 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 font-bold px-3 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/10 active:scale-95"
+                        >
+                            <Files className="w-4 h-4" />
+                            Save Selected PDF
+                        </button>
+                    </div>
+                )}
+                <button 
+                    onClick={() => {
+                        if (selectedStoryIds.size === stories.length) setSelectedStoryIds(new Set());
+                        else setSelectedStoryIds(new Set(stories.map(s => s.id)));
+                    }}
+                    className="text-xs text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 px-3 py-2 rounded-lg transition-all"
+                >
+                    {selectedStoryIds.size === stories.length ? 'Deselect All' : 'Select All'}
+                </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {stories.map(story => (
+                <div 
+                    key={story.id} 
+                    onClick={() => {
+                        const next = new Set(selectedStoryIds);
+                        if (next.has(story.id)) next.delete(story.id);
+                        else next.add(story.id);
+                        setSelectedStoryIds(next);
+                    }}
+                    className={`group bg-slate-900 border rounded-xl p-4 cursor-pointer transition-all duration-300 ${selectedStoryIds.has(story.id) ? 'border-orange-500/50 bg-orange-500/5 shadow-lg shadow-orange-500/5' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                    <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all duration-200 ${selectedStoryIds.has(story.id) ? 'bg-orange-500 border-orange-500' : 'border-slate-700 group-hover:border-slate-500'}`}>
+                            {selectedStoryIds.has(story.id) && <CheckCircle className="w-3.5 h-3.5 text-white animate-in zoom-in duration-200" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-slate-200 truncate group-hover:text-white transition-colors">{story.title}</h4>
+                            <p className="text-xs text-slate-500 mt-0.5 truncate">by {story.author} • {story.category}</p>
+                            
+                            <div className="flex gap-3 mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleSinglePdfDownload(story); }}
+                                    className="text-[10px] font-bold text-orange-500 hover:text-orange-400 flex items-center gap-1 uppercase tracking-wider"
+                                >
+                                    <FileDown className="w-3 h-3" /> PDF
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleSingleHtmlDownload(story); }}
+                                    className="text-[10px] font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1 uppercase tracking-wider"
+                                >
+                                    <FileCode className="w-3 h-3" /> HTML
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             ))}
