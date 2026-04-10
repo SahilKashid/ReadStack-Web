@@ -19,9 +19,6 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
   const [foundLinks, setFoundLinks] = useState<{url: string, title: string}[]>([]);
   const [selectedLinks, setSelectedLinks] = useState<Set<string>>(new Set());
   
-  // Library selection
-  const [selectedStoryIds, setSelectedStoryIds] = useState<Set<string>>(new Set());
-  
   // Printing loading state
   const [isPrinting, setIsPrinting] = useState(false);
   
@@ -90,22 +87,14 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
 
       setIsFetchingLinks(true);
       setStatusMessage('Scanning page for stories...');
+      setFoundLinks([]);
+      setSelectedLinks(new Set());
 
       try {
           const links = await fetchStoryLinks(targetUrl, (msg) => setStatusMessage(msg));
-          
-          setFoundLinks(prev => {
-              const existingUrls = new Set(prev.map(l => l.url));
-              const newLinks = links.filter(l => !existingUrls.has(l.url));
-              return [...prev, ...newLinks];
-          });
-
-          setSelectedLinks(prev => {
-              const next = new Set(prev);
-              links.forEach(l => next.add(l.url));
-              return next;
-          });
-
+          setFoundLinks(links);
+          // Auto select all by default
+          setSelectedLinks(new Set(links.map(l => l.url)));
           setStatusMessage(`Found ${links.length} stories!`);
       } catch (e) {
           setStatusMessage(`Error: ${e instanceof Error ? e.message : 'Failed to fetch'}`);
@@ -397,23 +386,14 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       URL.revokeObjectURL(url);
   };
 
-  const handleMergedHtmlDownload = (storyIds?: string[]) => {
+  const handleMergedHtmlDownload = () => {
       const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
-      
-      let storiesToMerge: Story[] = [];
-      
-      if (storyIds && storyIds.length > 0) {
-          storiesToMerge = storyIds
-              .map(id => stories.find(s => s.id === id))
-              .filter((s): s is Story => !!s);
-      } else {
-          storiesToMerge = completedJobs
-              .map(j => stories.find(s => s.id === j.resultStoryId))
-              .filter((s): s is Story => !!s);
-      }
+      const storiesToMerge = completedJobs
+          .map(j => stories.find(s => s.id === j.resultStoryId))
+          .filter((s): s is Story => !!s);
       
       if (storiesToMerge.length === 0) {
-        alert("No stories found to merge.");
+        alert("No completed stories found to merge.");
         return;
       }
 
@@ -445,23 +425,14 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       URL.revokeObjectURL(url);
   };
 
-  const handleMergedPdfDownload = (storyIds?: string[]) => {
+  const handleMergedPdfDownload = () => {
       const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
-      
-      let storiesToMerge: Story[] = [];
-      
-      if (storyIds && storyIds.length > 0) {
-          storiesToMerge = storyIds
-              .map(id => stories.find(s => s.id === id))
-              .filter((s): s is Story => !!s);
-      } else {
-          storiesToMerge = completedJobs
-              .map(j => stories.find(s => s.id === j.resultStoryId))
-              .filter((s): s is Story => !!s);
-      }
+      const storiesToMerge = completedJobs
+          .map(j => stories.find(s => s.id === j.resultStoryId))
+          .filter((s): s is Story => !!s);
       
       if (storiesToMerge.length === 0) {
-        alert("No stories found to merge.");
+        alert("No completed stories found to merge.");
         return;
       }
 
@@ -512,11 +483,10 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
         {foundLinks.length > 0 && (
             <div className="mt-6 border-t border-slate-800 pt-6 animate-in slide-in-from-top-4 duration-500 ease-out-quart">
                 <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-medium text-slate-300">Staged Stories ({foundLinks.length})</span>
-                    <div className="flex gap-3">
-                        <button onClick={() => setSelectedLinks(new Set(foundLinks.map(l => l.url)))} className="text-xs text-orange-500 hover:text-orange-400 transition-all">Select All</button>
-                        <button onClick={() => setSelectedLinks(new Set())} className="text-xs text-slate-500 hover:text-slate-400 transition-all">None</button>
-                        <button onClick={() => { setFoundLinks([]); setSelectedLinks(new Set()); }} className="text-xs text-red-500/70 hover:text-red-400 transition-all ml-2">Clear All</button>
+                    <span className="text-sm font-medium text-slate-300">Found {foundLinks.length} stories</span>
+                    <div className="flex gap-2">
+                        <button onClick={() => setSelectedLinks(new Set(foundLinks.map(l => l.url)))} className="text-xs text-orange-500 hover:underline transition-all">Select All</button>
+                        <button onClick={() => setSelectedLinks(new Set())} className="text-xs text-slate-500 hover:underline transition-all">None</button>
                     </div>
                 </div>
                 
@@ -642,88 +612,6 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                         {job.status === 'failed' && (
                             <div className="text-xs text-red-400 mt-1">{job.error}</div>
                         )}
-                    </div>
-                </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* Library Section */}
-      {stories.length > 0 && (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out-quart delay-150">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <h3 className="text-lg font-bold text-white">Your Collection</h3>
-                <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">{stories.length}</span>
-            </div>
-            
-            <div className="flex items-center gap-2">
-                {selectedStoryIds.size > 0 && (
-                    <div className="flex items-center gap-2 animate-in zoom-in duration-300">
-                        <button 
-                            onClick={() => handleMergedHtmlDownload(Array.from(selectedStoryIds))}
-                            className="text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold px-3 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95"
-                        >
-                            <FileCode className="w-4 h-4 text-orange-500" />
-                            Save Selected HTML
-                        </button>
-                        <button 
-                            onClick={() => handleMergedPdfDownload(Array.from(selectedStoryIds))}
-                            disabled={isPrinting} 
-                            className="text-xs text-slate-950 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 font-bold px-3 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/10 active:scale-95"
-                        >
-                            <Files className="w-4 h-4" />
-                            Save Selected PDF
-                        </button>
-                    </div>
-                )}
-                <button 
-                    onClick={() => {
-                        if (selectedStoryIds.size === stories.length) setSelectedStoryIds(new Set());
-                        else setSelectedStoryIds(new Set(stories.map(s => s.id)));
-                    }}
-                    className="text-xs text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 px-3 py-2 rounded-lg transition-all"
-                >
-                    {selectedStoryIds.size === stories.length ? 'Deselect All' : 'Select All'}
-                </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {stories.map(story => (
-                <div 
-                    key={story.id} 
-                    onClick={() => {
-                        const next = new Set(selectedStoryIds);
-                        if (next.has(story.id)) next.delete(story.id);
-                        else next.add(story.id);
-                        setSelectedStoryIds(next);
-                    }}
-                    className={`group bg-slate-900 border rounded-xl p-4 cursor-pointer transition-all duration-300 ${selectedStoryIds.has(story.id) ? 'border-orange-500/50 bg-orange-500/5 shadow-lg shadow-orange-500/5' : 'border-slate-800 hover:border-slate-700'}`}
-                >
-                    <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all duration-200 ${selectedStoryIds.has(story.id) ? 'bg-orange-500 border-orange-500' : 'border-slate-700 group-hover:border-slate-500'}`}>
-                            {selectedStoryIds.has(story.id) && <CheckCircle className="w-3.5 h-3.5 text-white animate-in zoom-in duration-200" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-slate-200 truncate group-hover:text-white transition-colors">{story.title}</h4>
-                            <p className="text-xs text-slate-500 mt-0.5 truncate">by {story.author} • {story.category}</p>
-                            
-                            <div className="flex gap-3 mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleSinglePdfDownload(story); }}
-                                    className="text-[10px] font-bold text-orange-500 hover:text-orange-400 flex items-center gap-1 uppercase tracking-wider"
-                                >
-                                    <FileDown className="w-3 h-3" /> PDF
-                                </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleSingleHtmlDownload(story); }}
-                                    className="text-[10px] font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1 uppercase tracking-wider"
-                                >
-                                    <FileCode className="w-3 h-3" /> HTML
-                                </button>
-                            </div>
-                        </div>
                     </div>
                 </div>
             ))}
