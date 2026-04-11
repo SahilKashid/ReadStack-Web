@@ -88,6 +88,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
         jobToStart.progress = 100;
         jobToStart.resultStoryId = story.id;
         jobToStart.title = story.title;
+        jobToStart.publishedDate = story.publishedDate;
         onJobComplete(story);
       } catch (error) {
         jobToStart.status = 'failed';
@@ -345,8 +346,13 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                     
                     <div className="flex-1 min-w-0">
                         <div className="flex justify-between mb-1">
-                            <span className="font-medium text-slate-200 truncate">{job.title || 'Unknown Story'}</span>
-                            <span className={`text-xs font-medium capitalize ${job.status === 'failed' ? 'text-red-400' : 'text-slate-500'}`}>{job.status}</span>
+                            <div className="flex flex-col min-w-0">
+                                <span className="font-medium text-slate-200 truncate">{job.title || 'Unknown Story'}</span>
+                                {job.publishedDate && (
+                                    <span className="text-[10px] text-slate-500 font-medium">Published: {job.publishedDate}</span>
+                                )}
+                            </div>
+                            <span className={`text-xs font-medium capitalize shrink-0 ml-2 ${job.status === 'failed' ? 'text-red-400' : 'text-slate-500'}`}>{job.status}</span>
                         </div>
                         
                         {job.status === 'downloading' ? (

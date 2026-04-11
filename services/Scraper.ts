@@ -205,6 +205,17 @@ export const scrapeStoryReal = async (
         // Tags - usually at the bottom or top
         const tagEls = Array.from(doc.querySelectorAll('a[href*="/tags/"], .tags a, .post-tags a'));
         metadata.tags = tagEls.map(t => t.textContent?.trim() || '').filter(t => t);
+
+        // Extract Publication Date
+        const dateEl = doc.querySelector('time') || 
+                       doc.querySelector('.date') || 
+                       doc.querySelector('.published') || 
+                       doc.querySelector('.post-date') ||
+                       doc.querySelector('meta[property="article:published_time"]');
+        
+        if (dateEl) {
+            metadata.publishedDate = dateEl.getAttribute('content') || dateEl.getAttribute('datetime') || dateEl.textContent?.trim();
+        }
       }
 
       // Extract Content

@@ -10,6 +10,7 @@ export interface Story {
   rating?: number;
   wordCount?: number;
   dateAdded: number;
+  publishedDate?: string;
   url?: string;
 }
 
@@ -19,6 +20,7 @@ export interface ScrapeJob {
   status: 'pending' | 'downloading' | 'completed' | 'failed';
   progress: number;
   title?: string;
+  publishedDate?: string;
   error?: string;
   resultStoryId?: string;
   proxyStatus?: string; // e.g., "Trying CodeTabs...", "Success via AllOrigins"
