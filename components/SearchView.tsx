@@ -1,8 +1,15 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Link as LinkIcon, AlertCircle, CheckCircle, Loader, Download, FileDown, Network, Files, Trash2, FileCode } from 'lucide-react';
+import { Search, Link as LinkIcon, AlertCircle, CheckCircle, Loader, Download, FileDown, Network, Files, Trash2, FileCode, Archive, FileText } from 'lucide-react';
 import { ScrapeJob, Story } from '../types';
 import { scrapeStoryReal, fetchStoryLinks } from '../services/Scraper';
+import JSZip from 'jszip';
+import TurndownService from 'turndown';
+
+const turndownService = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced'
+});
 
 interface SearchViewProps {
   onStartJobs: (jobs: ScrapeJob[]) => void;
@@ -19,8 +26,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
   const [foundLinks, setFoundLinks] = useState<{url: string, title: string}[]>([]);
   const [selectedLinks, setSelectedLinks] = useState<Set<string>>(new Set());
   
-  // Printing loading state
-  const [isPrinting, setIsPrinting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   // Internal tick to force re-render for smooth progress bars
   const [, setRenderTick] = useState(0);
@@ -125,319 +131,62 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       setSelectedLinks(newSet);
   };
 
-  // --- HTML GENERATION & PRINTING ---
+  // --- EXPORT LOGIC ---
 
-  // --- HTML GENERATION & STYLING ---
-
-  const READER_VIEW_STYLES = `
-    @page { 
-        margin: 2cm;
-        size: auto; 
-    }
-    
-    /* Base Reset */
-    html, body {
-        margin: 0;
-        padding: 0;
-        background: #fff;
-        width: 100%;
-    }
-
-    body { 
-        font-family: 'Georgia', 'Times New Roman', serif; 
-        padding: 40px;
-        color: #000;
-        line-height: 1.6;
-    }
-
-    /* Layout Cleanliness */
-    .story-print-container {
-        display: block;
-        max-width: 800px;
-        margin: 0 auto;
-        page-break-after: always;
-    }
-    
-    .story-print-container:last-child {
-        page-break-after: auto;
-    }
-
-    /* Header Styling */
-    .story-header {
-        margin-bottom: 30px;
-        border-bottom: 2px solid #000;
-        padding-bottom: 10px;
-        text-align: center;
-    }
-
-    .story-header h1 {
-        font-size: 24pt;
-        font-weight: bold;
-        margin: 0 0 10px 0;
-        color: #000;
-    }
-
-    .story-header .meta {
-        font-size: 14pt;
-        margin-bottom: 5px;
-    }
-
-    .story-header .sub-meta {
-        font-size: 10pt;
-        color: #444;
-        font-family: sans-serif;
-    }
-
-    /* Content Styling - The Reader View */
-    .story-content-wrapper {
-        font-size: 12pt;
-        text-align: justify;
-    }
-
-    /* ELEMENT RESET - These styles enforce the "Reader View" look */
-    
-    .story-content-wrapper p, 
-    .story-content-wrapper div, 
-    .story-content-wrapper section, 
-    .story-content-wrapper article,
-    .story-content-wrapper blockquote {
-        display: block !important;
-        position: static !important;
-        float: none !important;
-        width: auto !important;
-        height: auto !important;
-        margin: 0 0 1em 0 !important;
-        padding: 0 !important;
-        text-indent: 0 !important;
-        overflow: visible !important;
-    }
-
-    .story-content-wrapper span, 
-    .story-content-wrapper b, 
-    .story-content-wrapper strong, 
-    .story-content-wrapper i, 
-    .story-content-wrapper em, 
-    .story-content-wrapper u {
-        display: inline !important;
-        position: static !important;
-        float: none !important;
-        height: auto !important;
-        width: auto !important;
-        background: transparent !important;
-        color: inherit !important;
-    }
-
-    /* Aggressively Hide Visuals and Media for Efficiency */
-    img, svg, video, canvas, audio, picture, figure, iframe, .ad, .advertisement, button, nav, header, footer, .noprint {
-        display: none !important;
-    }
-
-    /* Neutralize Links - Make them look like normal text */
-    a {
-        color: #000 !important;
-        text-decoration: none !important;
-        border: none !important;
-        cursor: text !important;
-        pointer-events: none !important;
-    }
-
-    /* Clean up lists */
-    .story-content-wrapper ul, .story-content-wrapper ol {
-        margin-left: 2em !important;
-    }
-    .story-content-wrapper li {
-        display: list-item !important;
-    }
-    
-    .page-break {
-        display: none;
-    }
-
-    @media print {
-        body { padding: 0; }
-    }
-  `;
-
-  const READER_VIEW_SCRIPT = `
-    window.onload = function() {
-        const wrappers = document.querySelectorAll('.story-content-wrapper');
-        wrappers.forEach(wrapper => {
-            const media = wrapper.querySelectorAll('img, svg, video, iframe, canvas, picture, figure');
-            media.forEach(m => m.remove());
-            const links = wrapper.querySelectorAll('a');
-            links.forEach(link => {
-                const span = document.createElement('span');
-                span.innerHTML = link.innerHTML;
-                link.parentNode.replaceChild(span, link);
-            });
-            const allElements = wrapper.getElementsByTagName('*');
-            for (let i = 0; i < allElements.length; i++) {
-                const el = allElements[i];
-                el.removeAttribute('style');
-                el.removeAttribute('class');
-                el.removeAttribute('width');
-                el.removeAttribute('height');
-                el.removeAttribute('align');
-                el.removeAttribute('valign');
-                if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
-                    el.style.display = 'none';
-                }
-            }
-        });
-    };
-  `;
-
-  const getStoryContentHtml = (story: Story) => `
-    <article class="story-print-container">
-        <header class="story-header">
-            <h1>${story.title}</h1>
-            <div class="meta">
-                by <strong>${story.author}</strong>
-            </div>
-            <div class="sub-meta">
-                Category: ${story.category} • Tags: ${story.tags.join(', ')} • ${new Date(story.dateAdded).toLocaleDateString()}
-            </div>
-        </header>
-        <div class="story-content-wrapper">
-            ${story.content}
-        </div>
-    </article>
-  `;
-
-  const printContent = (title: string, htmlContent: string) => {
-      setIsPrinting(true);
-      
-      const printWindow = window.open('', '_blank');
-      
-      if (!printWindow) {
-          setIsPrinting(false);
-          alert("Pop-up blocked. Please allow popups for this site to download the PDF.");
-          return;
-      }
-
-      const doc = printWindow.document;
-      doc.open();
-      doc.write(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>${title}</title>
-              <style>${READER_VIEW_STYLES}</style>
-          </head>
-          <body>
-              ${htmlContent}
-              <script>
-                  ${READER_VIEW_SCRIPT}
-                  // Auto-print for PDF generation
-                  const originalOnLoad = window.onload;
-                  window.onload = function() {
-                      if (originalOnLoad) originalOnLoad();
-                      setTimeout(function() {
-                          window.print();
-                      }, 500);
-                  };
-              </script>
-          </body>
-          </html>
-      `);
-      doc.close();
-      
-      printWindow.focus();
-      setIsPrinting(false);
-  };
-
-  const handleSinglePdfDownload = (story: Story) => {
-      if (!story) {
-        alert("Error: Story content is missing.");
-        return;
-      }
-      printContent(story.title, getStoryContentHtml(story));
-  };
-
-  const handleSingleHtmlDownload = (story: Story) => {
+  const handleSingleMdDownload = (story: Story) => {
       if (!story) {
         alert("Error: Story content is missing.");
         return;
       }
 
-      const htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${story.title}</title>
-    <style>${READER_VIEW_STYLES}</style>
-</head>
-<body>
-    ${getStoryContentHtml(story)}
-    <script>${READER_VIEW_SCRIPT}</script>
-</body>
-</html>`;
-
-      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const markdown = `# ${story.title}\n\n${turndownService.turndown(story.content)}`;
+      const blob = new Blob([markdown], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${story.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
+      a.download = `${story.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
   };
 
-  const handleMergedHtmlDownload = () => {
+  const handleBulkZipDownload = async () => {
       const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
-      const storiesToMerge = completedJobs
+      const storiesToExport = completedJobs
           .map(j => stories.find(s => s.id === j.resultStoryId))
           .filter((s): s is Story => !!s);
       
-      if (storiesToMerge.length === 0) {
-        alert("No completed stories found to merge.");
+      if (storiesToExport.length === 0) {
+        alert("No completed stories found to export.");
         return;
       }
 
-      const mergedStoriesHtml = storiesToMerge.map(s => getStoryContentHtml(s)).join('');
+      setIsExporting(true);
+      const zip = new JSZip();
 
-      const htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReadStack Collection</title>
-    <style>${READER_VIEW_STYLES}</style>
-</head>
-<body>
-    ${mergedStoriesHtml}
-    <script>${READER_VIEW_SCRIPT}</script>
-</body>
-</html>`;
+      storiesToExport.forEach(story => {
+          const fileName = `${story.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
+          const markdown = `# ${story.title}\n\n${turndownService.turndown(story.content)}`;
+          zip.file(fileName, markdown);
+      });
 
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `readstack_collection_${storiesToMerge.length}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-  };
-
-  const handleMergedPdfDownload = () => {
-      const completedJobs = jobs.filter(j => j.status === 'completed' && j.resultStoryId);
-      const storiesToMerge = completedJobs
-          .map(j => stories.find(s => s.id === j.resultStoryId))
-          .filter((s): s is Story => !!s);
-      
-      if (storiesToMerge.length === 0) {
-        alert("No completed stories found to merge.");
-        return;
+      try {
+          const content = await zip.generateAsync({ type: 'blob' });
+          const url = URL.createObjectURL(content);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `readstack_export_${storiesToExport.length}_stories.zip`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+      } catch (error) {
+          console.error("ZIP generation failed:", error);
+          alert("Failed to generate ZIP file.");
+      } finally {
+          setIsExporting(false);
       }
-
-      const mergedContent = storiesToMerge.map(s => getStoryContentHtml(s)).join('');
-      printContent(`ReadStack_Collection_${storiesToMerge.length}_Stories`, mergedContent);
   };
 
   const completedCount = jobs.filter(j => j.status === 'completed').length;
@@ -520,43 +269,42 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
       </div>
 
       {/* Active Jobs Section */}
-      {jobs.length > 0 && (
+      {jobs.length > 0 ? (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out-quart">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-white">Download Queue</h3>
+          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center">
+                    <Files className="w-4 h-4 text-orange-500" />
+                </div>
+                <div>
+                    <h3 className="text-lg font-bold text-white leading-none">Download Queue</h3>
+                    <p className="text-xs text-slate-500 mt-1">{jobs.length} items in queue</p>
+                </div>
+            </div>
             <div className="flex items-center gap-2">
                 {completedCount > 1 && (
-                    <>
-                        <button 
-                            onClick={handleMergedHtmlDownload}
-                            className="text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95"
-                        >
-                            <FileCode className="w-4 h-4 text-orange-500" />
-                            Save All HTML
-                        </button>
-                        <button 
-                            onClick={handleMergedPdfDownload}
-                            disabled={isPrinting} 
-                            className="text-xs text-slate-950 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/10 hover:shadow-orange-500/20 active:scale-95"
-                        >
-                            <Files className="w-4 h-4" />
-                            {isPrinting ? 'Preparing PDF...' : `Merge & Save All PDF (${completedCount})`}
-                        </button>
-                    </>
+                    <button 
+                        onClick={handleBulkZipDownload}
+                        disabled={isExporting}
+                        className="text-xs text-slate-950 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/10 hover:shadow-orange-500/20 active:scale-95"
+                    >
+                        {isExporting ? <Loader className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                        {isExporting ? 'Generating ZIP...' : `Export All (${completedCount})`}
+                    </button>
                 )}
                 <button
                     onClick={onClearQueue}
-                    className="text-xs text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 hover:border-slate-700 font-medium px-3 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95"
+                    className="text-xs text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 hover:border-slate-700 font-medium px-3 py-2.5 rounded-lg flex items-center gap-2 transition-all active:scale-95"
                 >
                     <Trash2 className="w-4 h-4" />
-                    Clear Queue
+                    Clear
                 </button>
             </div>
           </div>
           
           <div className="grid gap-3">
             {[...jobs].reverse().map(job => (
-                <div key={job.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center gap-4 transform-gpu transition-all duration-300 hover:border-slate-700">
+                <div key={job.id} className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4 flex items-center gap-4 transform-gpu transition-all duration-300 hover:border-slate-700 hover:bg-slate-900">
                     <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center shrink-0">
                         {job.status === 'downloading' && <Loader className="w-5 h-5 text-orange-500 animate-spin" />}
                         {job.status === 'completed' && <CheckCircle className="w-5 h-5 text-orange-500 animate-in zoom-in duration-300" />}
@@ -586,25 +334,13 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                                 <button 
                                     onClick={() => {
                                       const s = stories.find(s => s.id === job.resultStoryId);
-                                      if (s) handleSinglePdfDownload(s);
-                                      else alert("Error: Story content missing. Please try refreshing.");
-                                    }}
-                                    disabled={isPrinting}
-                                    className="text-xs flex items-center gap-1 text-orange-400 hover:text-orange-300 disabled:opacity-50 transition-colors"
-                                >
-                                    {isPrinting ? <Loader className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}
-                                    {isPrinting ? 'Preparing...' : 'Save PDF'}
-                                </button>
-                                <button 
-                                    onClick={() => {
-                                      const s = stories.find(s => s.id === job.resultStoryId);
-                                      if (s) handleSingleHtmlDownload(s);
+                                      if (s) handleSingleMdDownload(s);
                                       else alert("Error: Story content missing.");
                                     }}
-                                    className="text-xs flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
+                                    className="text-xs flex items-center gap-1 text-orange-500 hover:text-orange-400 font-medium transition-colors"
                                 >
-                                    <FileCode className="w-3 h-3" />
-                                    Save HTML
+                                    <FileText className="w-3 h-3" />
+                                    Save Markdown
                                 </button>
                             </div>
                         )}
@@ -616,6 +352,14 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                 </div>
             ))}
           </div>
+        </div>
+      ) : (
+        <div className="py-12 flex flex-col items-center justify-center text-center opacity-0 animate-fade-in delay-300">
+            <div className="w-16 h-16 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-center mb-4 text-slate-700">
+                <FileText className="w-8 h-8" />
+            </div>
+            <h4 className="text-slate-400 font-medium">No active downloads</h4>
+            <p className="text-slate-600 text-sm mt-1">Paste a URL above to start building your stack</p>
         </div>
       )}
     </div>

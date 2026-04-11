@@ -76,8 +76,9 @@ const App: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="py-6 text-center text-xs text-slate-600 border-t border-slate-900 bg-slate-950">
-        <p>ReadStack Web • Client-side Scraper & PDF Generator</p>
+      <footer className="py-8 text-center text-xs text-slate-600 border-t border-slate-900 bg-slate-950">
+        <p className="mb-1">ReadStack Web • Client-side Scraper & Markdown Export</p>
+        <p className="opacity-50">Built for clean, offline reading</p>
       </footer>
     </div>
   );
