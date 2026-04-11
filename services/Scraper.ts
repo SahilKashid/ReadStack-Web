@@ -98,7 +98,7 @@ const resolveUrl = (base: string, relative: string): string => {
 export const fetchStoryLinks = async (
     searchUrl: string,
     onLog?: (message: string, type: 'info' | 'error' | 'success') => void
-): Promise<{url: string, title: string}[]> => {
+): Promise<{url: string, title: string, date?: string}[]> => {
   try {
     const doc = await fetchHtmlWithFallback(searchUrl, onLog);
     
@@ -127,9 +127,26 @@ export const fetchStoryLinks = async (
         const href = a.getAttribute('href') || '';
         const fullUrl = resolveUrl(searchUrl, href);
         
+        // Try to find a date nearby
+        let date: string | undefined;
+        const parent = a.parentElement;
+        if (parent) {
+            const dateEl = parent.querySelector('time, .date, .published, .post-date');
+            if (dateEl) {
+                date = dateEl.textContent?.trim();
+            } else {
+                // Look for text that looks like a date in the parent or siblings
+                const text = parent.textContent || '';
+                const dateMatch = text.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/) || 
+                                 text.match(/[A-Z][a-z]{2,8}\s\d{1,2},\s\d{4}/);
+                if (dateMatch) date = dateMatch[0];
+            }
+        }
+        
         return {
           url: fullUrl,
-          title: a.textContent?.trim() || 'Unknown Title'
+          title: a.textContent?.trim() || 'Unknown Title',
+          date
         };
       });
 

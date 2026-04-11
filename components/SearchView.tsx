@@ -44,7 +44,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
   const [inputUrl, setInputUrl] = useState('');
   const [isFetchingLinks, setIsFetchingLinks] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
-  const [foundLinks, setFoundLinks] = useState<{url: string, title: string}[]>([]);
+  const [foundLinks, setFoundLinks] = useState<{url: string, title: string, date?: string}[]>([]);
   const [selectedLinks, setSelectedLinks] = useState<Set<string>>(new Set());
   
   const [isExporting, setIsExporting] = useState(false);
@@ -137,6 +137,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
           id: crypto.randomUUID(),
           url: l.url,
           title: l.title,
+          publishedDate: l.date,
           status: 'pending',
           progress: 0
       }));
@@ -281,7 +282,10 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
                                 {selectedLinks.has(link.url) && <CheckCircle className="w-3 h-3 text-white animate-in zoom-in duration-200" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">{link.title}</div>
+                                <div className="flex justify-between items-start gap-2">
+                                    <div className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">{link.title}</div>
+                                    {link.date && <span className="text-[10px] text-slate-500 whitespace-nowrap mt-0.5">{link.date}</span>}
+                                </div>
                                 <div className="text-xs text-slate-600 truncate">{link.url}</div>
                             </div>
                         </div>
