@@ -129,17 +129,41 @@ export const fetchStoryLinks = async (
         
         // Try to find a date nearby
         let date: string | undefined;
-        const parent = a.parentElement;
-        if (parent) {
-            const dateEl = parent.querySelector('time, .date, .published, .post-date');
-            if (dateEl) {
-                date = dateEl.textContent?.trim();
-            } else {
-                // Look for text that looks like a date in the parent or siblings
-                const text = parent.textContent || '';
-                const dateMatch = text.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/) || 
-                                 text.match(/[A-Z][a-z]{2,8}\s\d{1,2},\s\d{4}/);
-                if (dateMatch) date = dateMatch[0];
+        
+        // 1. Check if the link itself has a date-like title
+        const linkTitle = a.getAttribute('title') || '';
+        const titleDateMatch = linkTitle.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/) || 
+                               linkTitle.match(/[A-Z][a-z]{2,8}\s\d{1,2},?\s\d{4}/);
+        if (titleDateMatch) date = titleDateMatch[0];
+
+        // 2. Search up the tree for a container that might have a date
+        if (!date) {
+            let current: HTMLElement | null = a.parentElement;
+            let depth = 0;
+            while (current && depth < 4 && !date) {
+                // Check for common date elements within this container
+                const dateEl = current.querySelector('time, .date, .published, .post-date, .b-story-list__item-date, .meta-date, .timestamp, .datetime, .sl-date, .date-added');
+                const dateText = dateEl?.textContent?.trim() || '';
+                
+                if (dateText && dateText.length > 3 && !dateText.toLowerCase().includes('story') && !dateText.toLowerCase().includes('author')) {
+                    date = dateText;
+                } else {
+                    // Look for text patterns in the container's text content, excluding the link text itself
+                    const containerText = current.innerText || current.textContent || '';
+                    const linkText = a.innerText || a.textContent || '';
+                    const textToSearch = containerText.replace(linkText, '');
+                    
+                    const dateMatch = textToSearch.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/) || 
+                                     textToSearch.match(/[A-Z][a-z]{2,8}\s\d{1,2},?\s\d{4}/) ||
+                                     textToSearch.match(/\d{1,2}\s[A-Z][a-z]{2,8}\s\d{4}/) ||
+                                     textToSearch.match(/\d+\s(day|week|month|year)s?\sago/i);
+                    
+                    if (dateMatch && dateMatch[0].length > 5) {
+                        date = dateMatch[0];
+                    }
+                }
+                current = current.parentElement;
+                depth++;
             }
         }
         
