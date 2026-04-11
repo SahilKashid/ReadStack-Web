@@ -231,10 +231,14 @@ export const scrapeStoryReal = async (
       
       if (contentContainer) {
         // Clean up the content
-        // Remove scripts, ads, sidebars, etc.
+        // Remove scripts, ads, sidebars, and other non-story elements
         const clone = contentContainer.cloneNode(true) as Element;
-        const junk = clone.querySelectorAll('script, style, .advert, .ad, .sidebar, .comments, .share-buttons, .related-posts, nav');
+        const junk = clone.querySelectorAll('script, style, .advert, .ad, .sidebar, .comments, .share-buttons, .related-posts, nav, .userpic, .author-info, .pager, .pagination, footer, header, .breadcrumb, .meta, .social, .share, .tags, .rating, .category, .author, .title, .next-page, .prev-page, .page-links, h1, .author-pic, .author-stats, .author-bio, .story-footer, .story-header, .b-story-header, .b-story-footer, .b-pager, .b-pagination');
         junk.forEach(el => el.remove());
+        
+        // Remove any empty divs or spans that might be left over
+        const empty = clone.querySelectorAll('div:empty, span:empty, p:empty');
+        empty.forEach(el => el.remove());
         
         fullContent += clone.innerHTML;
       } else {

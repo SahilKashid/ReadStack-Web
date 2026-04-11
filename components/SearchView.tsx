@@ -11,6 +11,27 @@ const turndownService = new TurndownService({
     codeBlockStyle: 'fenced'
 });
 
+// Aggressively remove non-text elements from Markdown export
+turndownService.addRule('remove-junk', {
+    filter: (node) => {
+        const junkTags = ['IMG', 'SCRIPT', 'STYLE', 'IFRAME', 'VIDEO', 'AUDIO', 'CANVAS', 'SVG', 'PICTURE', 'FIGURE', 'BUTTON', 'NAV', 'HEADER', 'FOOTER', 'FORM', 'INPUT', 'SELECT', 'TEXTAREA'];
+        return junkTags.includes(node.nodeName);
+    },
+    replacement: () => ''
+});
+turndownService.addRule('link-stripper', {
+    filter: 'a',
+    replacement: (content) => content.trim()
+});
+
+// Remove empty elements
+turndownService.addRule('removeEmpty', {
+    filter: (node) => {
+        return (node.nodeName === 'P' || node.nodeName === 'DIV' || node.nodeName === 'SPAN') && !node.textContent?.trim();
+    },
+    replacement: () => ''
+});
+
 interface SearchViewProps {
   onStartJobs: (jobs: ScrapeJob[]) => void;
   jobs: ScrapeJob[];
@@ -139,7 +160,13 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
         return;
       }
 
-      const markdown = `# ${story.title}\n\n${turndownService.turndown(story.content)}`;
+      const cleanContent = turndownService.turndown(story.content);
+      // Avoid duplicate title if the content already starts with the title as a header
+      const titleHeader = `# ${story.title}`;
+      const markdown = cleanContent.startsWith(titleHeader) 
+        ? cleanContent 
+        : `${titleHeader}\n\n${cleanContent}`;
+
       const blob = new Blob([markdown], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -167,7 +194,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
 
       storiesToExport.forEach(story => {
           const fileName = `${story.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
-          const markdown = `# ${story.title}\n\n${turndownService.turndown(story.content)}`;
+          const cleanContent = turndownService.turndown(story.content);
+          const titleHeader = `# ${story.title}`;
+          const markdown = cleanContent.startsWith(titleHeader) 
+            ? cleanContent 
+            : `${titleHeader}\n\n${cleanContent}`;
           zip.file(fileName, markdown);
       });
 
@@ -304,7 +335,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onStartJobs, jobs, onJob
           
           <div className="grid gap-3">
             {[...jobs].reverse().map(job => (
-                <div key={job.id} className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4 flex items-center gap-4 transform-gpu transition-all duration-300 hover:border-slate-700 hover:bg-slate-900">
+                <div key={job.id} className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4 flex items-center gap-4 transform-gpu transition-all duration-300 hover:border-slate-700 hover:bg-slate-900 overflow-hidden">
                     <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center shrink-0">
                         {job.status === 'downloading' && <Loader className="w-5 h-5 text-orange-500 animate-spin" />}
                         {job.status === 'completed' && <CheckCircle className="w-5 h-5 text-orange-500 animate-in zoom-in duration-300" />}
